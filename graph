@@ -1,0 +1,1115 @@
+// iedminster17@georgefox.edu
+// Assignment 6
+// 2019-04-05
+
+import java.io.{FileNotFoundException, IOException}
+
+import scala.collection.mutable
+import scala.io.Source
+import scala.xml.XML.loadFile
+import scala.xml.Node
+
+object graph
+{
+  /**
+  A trait for representing directed and undirected graphs
+    */
+  trait Graph[T]
+  {
+    def isDirected:Boolean
+
+    @throws(classOf[IllegalArgumentException])
+    def addVertex(vertex:T):Graph[T]
+
+    @throws(classOf[IllegalArgumentException])
+    def removeVertex(vertex:T):Graph[T]
+
+    def getVertices:Iterable[T]
+
+    @throws(classOf[IllegalArgumentException])
+    def getAdjacent(source:T):Iterable[T]
+
+    @throws(classOf[IllegalArgumentException])
+    def addEdge(source:T, destination:T, weight:Int):Graph[T]
+
+    @throws(classOf[IllegalArgumentException])
+    def removeEdge(source:T, destination:T):Graph[T]
+
+    def edgeExists(source:T, destination:T):Boolean
+
+    @throws(classOf[IllegalArgumentException])
+    def getEdgeWeight(source:T, destination:T):Int
+
+    def getEdge(source:T, destination:T):Option[Edge[T]]
+
+    def getEdges():Iterable[Edge[T]]
+
+    def pathLength(path:Seq[T]):Option[Long]
+
+    @throws(classOf[IllegalArgumentException])
+    def shortestPathBetween(source:T, destination:T):Option[Seq[Edge[T]]]
+
+    def minimumSpanningTree:Option[Graph[T]]
+
+    def getLocalTSP():Seq[Edge[T]]
+
+    def getLocalTSP(initialTour:Seq[T]):Seq[Edge[T]]
+
+    def dynamicTSP:Seq[Edge[T]]
+
+    def getOptimalTour(popSize:Int, inversionProb:Float, maxIters:Int):Seq[Edge[T]]
+
+    def getOptimalTour:Seq[Edge[T]]
+
+    def branchBoundTSP:Seq[Edge[T]]
+
+    override def toString:String
+  }
+
+  /**
+    * An graphical edge to be used in path-finding analysis
+    *
+    * @param source Source vertex of the edge
+    * @param destination Destination vertex of the edge
+    * @param weight Edge weight
+    *
+    * @tparam T Parameter type of the vertices
+    */
+  class Edge[T](val source:T, val destination:T, val weight:Int) extends Ordered[Edge[T]]
+  {
+    def compare(other:Edge[T]):Int =
+    {
+      weight - other.weight
+    }
+
+    override def toString:String =
+    {
+      "Source: " + source + ", Destination: " + destination + ", Weight: " + weight + "\n"
+    }
+  }
+
+  /**
+  Serves as a factory function for producing new empty Graphs
+    */
+  object Graph
+  {
+    /*
+    Creates and returns a new empty Graph - acts as a constructor
+    */
+    def apply[T](isDirected:Boolean):Graph[T] =
+    {
+      new GraphImpl[T](isDirected, new mutable.HashMap[T, mutable.HashMap[T, Int]]())
+    }
+
+    /*
+    Creates and returns a new Graph from a CSV file
+     */
+    @throws(classOf[IOException])
+    def fromCSVFile(isDirected:Boolean, fileName:String):Graph[String] =
+    {
+      try
+      {
+        val lines = Source.fromFile(fileName).getLines()
+        val graph = apply[String](isDirected)
+
+        for (i <- 1 to lines.next().toInt)
+        {
+          graph.addVertex(lines.next())
+        }
+
+        for (j <- 1 to lines.next().toInt) {
+          val edge = lines.next().split(",")
+          graph.addEdge(edge(0), edge(1), Integer.parseInt(edge(2)))
+        }
+
+        graph
+      }
+      catch
+        {
+          case a: IllegalArgumentException => throw new IOException
+          case b: FileNotFoundException => throw new IOException
+          case c: IndexOutOfBoundsException => throw new IOException
+        }
+    }
+
+    /*
+    An private implementation of the Graph trait
+    */
+    private class GraphImpl[T] (val isDirected:Boolean, var map:mutable.HashMap[T, mutable.HashMap[T, Int]]) extends Graph[T]
+    {
+      /**
+        * Adds a vertex to the graph and returns a new graph with the given vertex
+        *
+        * @param vertex The vertex to be added to the graph
+        *
+        * @return A new graph with the given vertex added
+        */
+      def addVertex(vertex:T):Graph[T] =
+      {
+        if (vertex == null || map.contains(vertex)) throw new IllegalArgumentException
+
+        else new GraphImpl[T](isDirected, map +=((vertex, mutable.HashMap.empty)))
+      }
+
+      /**
+        * Removes a vertex from the graph and returns a new graph without the given vertex
+        *
+        * @param vertex The vertex to be removed from the graph
+        *
+        * @return A new graph without the given vertex
+        */
+      def removeVertex(vertex:T):Graph[T] =
+      {
+        if (vertex == null || !map.contains(vertex)) throw new IllegalArgumentException
+
+        else
+        {
+          map -= vertex
+          map.keySet.foreach(i => if(map.apply(i).contains(vertex)) { map.apply(i) -= vertex})
+          new GraphImpl[T](isDirected, map)
+        }
+      }
+
+      /**
+        * Returns an iterable of the vertices in the graph
+        *
+        * @return An iterable of the vertices in the graph
+        */
+      def getVertices:Iterable[T] = map.keySet
+
+      /**
+        * Returns an Iterable of the adjacent vertices to a given vertex
+        *
+        * @param source The vertex being tested for adjacent vertices
+        *
+        * @throws java.lang.IllegalArgumentException Thrown if the vertex provided is not a vertex in the graph
+        *
+        * @return Returns an iterable of the adjacent vertices to a given vertex
+        */
+      @throws(classOf[IllegalArgumentException])
+      def getAdjacent(source:T):Iterable[T] =
+      {
+        if(!map.keySet.contains(source)) throw new IllegalArgumentException
+
+        else
+        {
+          map.apply(source).keySet
+        }
+
+      }
+
+      /**
+        * Adds a weighted edge between the given vertices
+        *
+        * @param source The source vertex of the edge
+        * @param destination The destination vertex of the edge
+        * @param weight The weight of the edge
+        *
+        * @return A new graph with the given edge
+        */
+      def addEdge(source:T, destination:T, weight:Int):Graph[T] =
+      {
+        if (!map.contains(source) || !map.contains(destination) || source.equals(destination) || weight < 1)
+          throw new IllegalArgumentException
+
+        else
+        {
+          if (map.apply(source).contains(destination))
+          {
+            map.apply(source) -= destination
+            if (!isDirected)
+            {
+              map.apply(destination) -= source
+            }
+          }
+
+          map.apply(source) += ((destination, weight))
+          if (!isDirected)
+            map.apply(destination) += ((source, weight))
+          new GraphImpl[T](isDirected, map)
+        }
+      }
+
+      /**
+        * Removes an edge from the graph
+        *
+        * @param source The source vertex of the edge to be removed
+        * @param destination The destination vertex of the edge to be removed
+        *
+        * @return A new graph without the given vertex
+        */
+      def removeEdge(source:T, destination:T):Graph[T] =
+      {
+        if (!map.contains(source) || !map.contains(destination) || !map.apply(source).contains(destination))
+          throw new IllegalArgumentException
+
+        else
+        {
+          map.apply(source) -= destination
+          if (!isDirected)
+            map.apply(destination) -= source
+          new GraphImpl[T](isDirected, map)
+        }
+      }
+
+      /**
+        * Returns a boolean value on whether or not an edge exists between the vertices given
+        *
+        * @param source The starting vertex of the edge
+        * @param destination The destination vertex of the edge
+        *
+        * @return A boolean value on whether or not an edge exists between the vertices given
+        */
+      def edgeExists(source:T, destination:T):Boolean =
+      {
+        if (map.contains(source))
+          if (map.apply(source).contains(destination))
+            true
+          else
+            false
+        else
+          false
+      }
+
+      /**
+        * Returns the weight of an edge between the given vertices
+        *
+        * @param source The starting vertex of the edge
+        * @param destination The destination vertex of the edge
+        *
+        * @return The weight of an edge between the given vertices
+        */
+      def getEdgeWeight(source:T, destination:T):Int =
+      {
+        if (!edgeExists(source, destination))
+        {
+          -1
+        }
+
+        else map.apply(source).apply(destination)
+      }
+
+      /**
+        * Returns the specific edge between a source and destination, or None if it does not exist.
+        *
+        * @param source The given source of the edge
+        * @param destination The given destination of the edge
+        *
+        * @return The specific edge between a source and destination, or None if it does not exist
+        */
+      def getEdge(source:T, destination:T):Option[Edge[T]] =
+      {
+        if(!map.keySet.contains(source) || !map.apply(source).keySet.contains(destination))
+        {
+          None
+        }
+        else
+        {
+          Some(new Edge[T](source, destination, map.apply(source).apply(destination)))
+        }
+      }
+
+      /**
+        * Returns an Iterable containing all edges of the graph.
+        *
+        * @return An Iterable containing all edges of the graph
+        */
+      def getEdges():Iterable[Edge[T]] =
+      {
+        var edges = Seq[Edge[T]]()
+
+        if(isDirected)
+        {
+          for(i <- map.keySet)
+          {
+            for(j <- map.apply(i).keySet)
+            {
+              edges = edges :+ new Edge[T](i, j, map.apply(i).apply(j))
+            }
+          }
+
+          edges
+        }
+        else
+        {
+          for(i <- map.keySet)
+          {
+            for(j <- map.apply(i).keySet)
+            {
+              var contains = false
+              for(k <- edges)
+              {
+                if(k.source == i && k.destination == j)
+                {
+                  contains = true
+                }
+                else if(k.source == j && k.destination == i)
+                {
+                  contains = true
+                }
+              }
+
+              if(!contains)
+              {
+                edges = edges :+ new Edge[T](i, j, map.apply(i).apply(j))
+              }
+            }
+          }
+
+          edges
+        }
+      }
+
+      /**
+        * Returns the total path length given a sequence of vertices
+        *
+        * @param path The sequence of vertices being tested for path length
+        *
+        * @return Returns the total path length given a sequence of vertices
+        */
+      def pathLength(path: Seq[T]): Option[Long] =
+      {
+        var length:Long = 0
+        var i = 0
+        var noPath = false
+
+        while(i < path.length - 1 && !noPath)
+        {
+          if(!edgeExists(path(i), path(i + 1)))
+          {
+            noPath = true
+          }
+          else
+          {
+            length += getEdgeWeight(path(i), path(i + 1))
+            i += 1
+          }
+        }
+
+        if(noPath)
+        {
+          None
+        }
+        else
+        {
+          Some(length)
+        }
+      }
+
+      /**
+        * Determines the shortest path between two given vertices. Returns a sequence of edges of the shortest path of
+        * vertices. Alternatively, returns None if no path exists between the vertices.
+        *
+        * @param source The source vertex of the path
+        * @param destination The final vertex of the path
+        *
+        * @throws java.lang.IllegalArgumentException
+        *
+        * @return Returns either a sequence of edges showing the shortest path or None if no path exists between the
+        *         given vertices
+        */
+      @throws(classOf[IllegalArgumentException])
+      def shortestPathBetween(source:T, destination:T):Option[Seq[Edge[T]]] =
+      {
+        // Keeps an index of where each vertex maps to for the other Iterables
+        val vertices = map.keySet.toSeq
+
+        // Keeps track of what vertices have been visited
+        var unvisited = map.keySet
+
+        // Keeps track of the distances to each vertex from the source vertex
+        val distances = new Array[Double](vertices.size)
+
+        // Keeps track of the index of the previous vertex
+        val previous = new Array[Int](vertices.size)
+
+        // Determines if there is a path from source to destination
+        var stopGoing = false
+
+        // If the vertices given are not in the graph, throw an IllegalArgumentException
+        if(!vertices.contains(source) || !vertices.contains(destination)) throw new IllegalArgumentException
+
+        // Sets all initial distances to positive infinity away from the source
+        for(i <- 0 to vertices.size - 1)
+        {
+          distances(i) = Double.PositiveInfinity
+        }
+
+        distances(vertices.indexOf(source)) = 0
+
+        // While there are still unvisited vertices, the destination vertex is unvisited, and there could still be a path
+        while(unvisited.nonEmpty && unvisited.contains(destination) && !stopGoing)
+        {
+          var minimum = Double.PositiveInfinity
+
+          // Determines the minimum distances of the remaining vertices
+          for(i <- unvisited)
+          {
+            if(distances(vertices.indexOf(i)) < minimum)
+            {
+              minimum = distances(vertices.indexOf(i))
+            }
+          }
+
+          // If the only minimums left are infinite, there is no path from source to destination
+          if(minimum == Double.PositiveInfinity)
+          {
+            stopGoing = true
+          }
+          else
+          {
+            var current = vertices(distances.indexOf(minimum))
+            unvisited -= current
+
+            // Resets the minimum distances of the vertices if necessary
+            for (i <- getAdjacent(current))
+            {
+              val newDistance = minimum + getEdgeWeight(current, i)
+              if (newDistance < distances(vertices.indexOf(i)))
+              {
+                distances(vertices.indexOf(i)) = newDistance
+                previous(vertices.indexOf(i)) = vertices.indexOf(current)
+              }
+            }
+          }
+        }
+
+        // If a path has been determined to exist between source and destination, do this
+        if(!stopGoing)
+        {
+          var path: Seq[Edge[T]] = Seq()
+          var currentNode = destination
+          var previousNode = destination
+
+          // Iterates from destination to source to see what edges are in the path
+          while(previousNode != source)
+          {
+            currentNode = previousNode
+            previousNode = vertices(previous(vertices.indexOf(currentNode)))
+            path = path :+ new Edge[T](previousNode, currentNode, getEdgeWeight(previousNode, currentNode))
+          }
+
+          // Reverses the path so that it iterates from source to destination
+          Some(path.reverse)
+        }
+
+        // If no path has been determined to exist between sources and destination, do this
+        else
+        {
+          None
+        }
+      }
+
+      /**
+        * Uses Kruskal's algorithm to identify and return a subgraph of the minimum spanning tree of the graph. Returns
+        * None if the graph is not connected.
+        *
+        * @return A Graph[T] representation of the minimum spanning tree
+        */
+      def minimumSpanningTree: Option[Graph[T]] =
+      {
+        var edges = Seq[Edge[T]]()
+        val graph = Graph.apply[T](isDirected)
+        var n = 0
+        var end = false
+
+        if(isDirected)
+        {
+          end = true
+        }
+
+        for(i <- getEdges())
+        {
+          edges = edges :+ i
+        }
+
+        edges = edges.sorted
+
+        while(graph.getEdges().size < map.keySet.size - 1 && !end)
+        {
+          val seq = graph.getVertices.toIndexedSeq
+
+          if(!seq.contains(edges(n).source))
+          {
+            graph.addVertex(edges(n).source)
+          }
+
+          if(!seq.contains(edges(n).destination))
+          {
+            graph.addVertex(edges(n).destination)
+          }
+
+          if(graph.shortestPathBetween(edges(n).source, edges(n).destination) == None)
+          {
+            graph.addEdge(edges(n).source, edges(n).destination, edges(n).weight)
+          }
+
+          n += 1
+
+          if(n > edges.size)
+          {
+            end = true
+          }
+        }
+
+        if(end)
+        {
+          None
+        }
+        else
+        {
+          Some(graph)
+        }
+      }
+
+      /**
+        * Returns a seq of edges showing a small (not necessarily smallest) route through all vertices. I.e. uses 2-opt
+        * to solve the travelling salesman problem. Initial tour arbitrarily defined as a set of all vertices with the
+        * initial vertex added to the end.
+        *
+        * @return A seq of edges showing a small route through all vertices
+        */
+      def getLocalTSP(): Seq[Edge[T]] =
+      {
+        var local = getVertices.toIndexedSeq
+        local = local :+ local(0)
+
+        getLocalTSP(local)
+
+      }
+
+      /**
+        * Returns a seq of edges showing a small (not necessarily smallest) route through all vertices given an initial
+        * route given. I.e. uses 2-opt to solve the travelling salesman problem.
+        *
+        * @param initialTour The initial tour of the vertices in the graph
+        *
+        * @return A seq of edges showing a small route through all vertices
+        */
+      def getLocalTSP(initialTour:Seq[T]):Seq[Edge[T]] =
+      {
+        var shortest = pathLength(initialTour).get
+        var bestPath = initialTour
+
+        for(i <- 1 until initialTour.length - 2)
+        {
+          for(j <- i + 1 until initialTour.length - 1)
+          {
+            var path = Seq[T]()
+            var reverse = Seq[T]()
+
+            for(k <- 0 until i)
+            {
+              path = path :+ initialTour(k)
+            }
+            for(k <- i to j)
+            {
+              reverse = reverse.+:(initialTour(k))
+            }
+
+            path = path ++ reverse
+
+            for(k <- j + 1 until initialTour.length)
+            {
+              path = path :+ initialTour(k)
+            }
+
+            if(pathLength(path).get < shortest)
+            {
+              shortest = pathLength(path).get
+              bestPath = path
+            }
+          }
+        }
+
+        println(pathLength(bestPath))
+        convertToEdges(bestPath)
+      }
+
+      /**
+        * Solves the travelling salesman problem by using the Held-Karp algorithm to dynamically solve it.
+        *
+        * @return Returns a sequence of edges showing the lowest weight Hamiltonian circuit
+        */
+      def dynamicTSP:Seq[Edge[T]] =
+      {
+        var distances = new mutable.HashMap[(T, Set[T]), Int]()
+        var previousValues = new mutable.HashMap[(T, Set[T]), T]()
+        val vertices = getVertices.toIndexedSeq
+        val v = getVertices.toSet
+
+        for(k <- 0 until vertices.length)
+        {
+          distances = distances +=(((vertices(k), Set(vertices(k))), getEdgeWeight(vertices(0), vertices(k))))
+        }
+
+        for(size <- 2 until vertices.length)
+        {
+          for (s <- v.subsets(size))
+          {
+            for(k <- s)
+            {
+              var minimum = Int.MaxValue
+              var previous = k
+
+              for(m <- s)
+              {
+                if(m != k)
+                {
+                  if(distances(m, s - k) + getEdgeWeight(m, k) < minimum)
+                  {
+                    minimum = distances(m, s - k) + getEdgeWeight(m, k)
+                    previous = m
+                  }
+                }
+              }
+
+              distances = distances +=(((k, s), minimum))
+              previousValues = previousValues +=(((k, s), previous))
+            }
+          }
+        }
+
+        var smallest = Int.MaxValue
+
+        for(i <- 1 until vertices.length)
+        {
+          if((distances(vertices(i), vertices.takeRight(vertices.length - 1).toSet) + getEdgeWeight(vertices(i), vertices(0))) < smallest)
+          {
+            smallest = distances(vertices(i), vertices.takeRight(vertices.length - 1).toSet) + getEdgeWeight(vertices(i), vertices(0))
+
+            previousValues = previousValues +=(((vertices(0), vertices.takeRight(vertices.length - 1).toSet), vertices(i)))
+          }
+        }
+
+        var j = vertices(0)
+        var order = Seq[T]()
+        var shortenedVertices = getVertices.toSet
+        var first = true
+        order = order :+ j
+
+        while(order.length < vertices.length)
+        {
+          shortenedVertices = shortenedVertices - j
+          if (first)
+          {
+            j = previousValues((j, shortenedVertices))
+            first = false
+          }
+          else
+          {
+            j = previousValues((j, shortenedVertices + j))
+          }
+          order = order :+ j
+        }
+
+        order = order :+ vertices(0)
+        order = order.reverse
+        order.toIndexedSeq
+
+        println(pathLength(order))
+        convertToEdges(order)
+      }
+
+      /**
+        * Finds an optimal path for the travelling salesman problem through use of the Inver-Over algorithm created
+        * by Guo Tao and Zbigniew Michalewicz. It was created by analyzing the paper, which describes the algorithm
+        * in detail, and attempting to repeat their process. It solves the problem by random mutations and crossovers
+        * via a genetic process. The algorithm can be seen in their paper listed at the link below.
+        *
+        * https://dl.acm.org/citation.cfm?id=668606
+        *
+        * @param popSize The randomly generated population of paths through the graph.
+        * @param inversionProb The probability of a mutation happening to a subset of the population.
+        * @param maxIters The maximum number of iterations for the tour.
+        *
+        * @return A sequence of edges listing the optimal path through the graph.
+        */
+      def getOptimalTour(popSize:Int, inversionProb:Float, maxIters:Int):Seq[Edge[T]] =
+      {
+        // Initialization of variables
+        var iteration = 0
+        val random = scala.util.Random
+        var order = Seq[T]()
+        var inversions = 0
+
+        // Initialization of population
+        var population = new mutable.HashMap[Int, Seq[T]]()
+
+        // Creation of population
+        for(i <- 0 until popSize)
+        {
+          order = random.shuffle(getVertices.toSeq)
+          order = order :+ order.head
+          population +=((i, order))
+        }
+
+        // Arbitrarily chooses the first member of the population as the smallest
+        var smallest = population(0)
+
+        // While iterations
+        while(iteration < maxIters)
+        {
+          // Iterates through each member of the population
+          for(j <- 0 until popSize)
+          {
+            var subset = population(j)
+            var subset2 = Seq[T]()
+            var reverse = Seq[T]()
+            var city = subset(random.nextInt(subset.size))
+            var city2 = city
+            var keepGoing = true
+
+            while(keepGoing)
+            {
+              // If the randomly chosen float is less than the probability given
+              if(random.nextFloat <= inversionProb)
+              {
+                // Ensures that city 2 is not equal to city
+                city2 = city
+                while(city2.equals(city))
+                {
+                  city2 = subset(random.nextInt(subset.size))
+                }
+              }
+              else
+              {
+                subset2 = population(random.nextInt(population.size))
+
+                // Chooses the city to the right unless the city is the last one in the subset
+                if(subset2.indexOf(city) == subset2.size - 1)
+                {
+                  city2 = subset2(subset2.indexOf(city) - 1)
+                }
+                else
+                {
+                  city2 = subset2(subset2.indexOf(city) + 1)
+                }
+              }
+
+              // Checks if city2 is adjacent to city
+              if(subset.indexOf(city) == subset.size - 1)
+              {
+                if(subset(subset.indexOf(city) - 1).equals(city2))
+                {
+                  keepGoing = false
+                }
+              }
+              else if(subset.indexOf(city) == 0)
+              {
+                if(subset(subset.indexOf(city) + 1).equals(city2))
+                {
+                  keepGoing = false
+                }
+              }
+              else
+              {
+                if(subset(subset.indexOf(city) - 1).equals(city2) || subset(subset.indexOf(city) + 1).equals(city2))
+                  {
+                    keepGoing = false
+                  }
+              }
+
+              // Reverses the vertices between city and city2
+              if(subset.indexOf(city) < subset.indexOf(city2))
+              {
+                subset2 = Seq[T]()
+                reverse = Seq[T]()
+
+                for(i <- 0 until subset.size)
+                {
+                  if(i > subset.indexOf(city) && i <= subset.indexOf(city2))
+                  {
+                    reverse = reverse :+ subset(i)
+                  }
+                  else
+                  {
+                    subset2 = subset2 :+ subset(i)
+                  }
+                  if(i == subset.indexOf(city2))
+                  {
+                    reverse = reverse.reverse
+                    for(k <- 0 until reverse.size)
+                    {
+                      subset2 = subset2 :+ reverse(k)
+                    }
+                  }
+                }
+              }
+              else
+              {
+                subset2 = Seq[T]()
+                reverse = Seq[T]()
+
+                for(i <- 0 until subset.size)
+                {
+                  if(i > subset.indexOf(city2) && i <= subset.indexOf(city))
+                  {
+                    reverse = reverse :+ subset(i)
+                  }
+                  else
+                  {
+                    subset2 = subset2 :+ subset(i)
+                  }
+                  if(i == subset.indexOf(city))
+                  {
+                    reverse = reverse.reverse
+                    for(k <- 0 until reverse.size)
+                    {
+                      subset2 = subset2 :+ reverse(k)
+                    }
+                  }
+                }
+              }
+
+              city = city2
+              subset = subset2
+              inversions = inversions + 1
+            }
+
+            // If the created subset improves upon the stores subset, store the created subset
+            if(pathLength(subset).get <= pathLength(population(j)).get)
+            {
+              population.+=((j, subset))
+            }
+          }
+
+          // Finds the smallest element of the population and checks if the smallest element has changed
+          for(k <- 0 until population.size)
+          {
+            if(pathLength(population(k)).get < pathLength(smallest).get)
+            {
+              smallest = population(k)
+            }
+          }
+
+          iteration = iteration + 1
+        }
+
+        println(pathLength(smallest))
+        // Converts a sequence of vertices to a sequence of edges
+        convertToEdges(smallest)
+      }
+
+      /**
+        * Finds an optimal path for the travelling salesman problem through use of the Inver-Over algorithm created
+        * by Guo Tao and Zbigniew Michalewicz. It was created by analyzing the paper, which describes the algorithm
+        * in detail, and attempting to repeat their process. It solves the problem by random mutations and crossovers
+        * via a genetic process. This method gives default values of 100 for the population size, 0.02 (2.00%) for the
+        * inversion probability, and 2500 for the maximum iterations. The algorithm can be seen in their paper listed
+        * at the link below.
+        *
+        * https://dl.acm.org/citation.cfm?id=668606
+        *
+        * @return
+        */
+      def getOptimalTour():Seq[Edge[T]] =
+      {
+        val population = 100
+        val probability = 0.02.toFloat
+        val iterations = 2500
+
+        getOptimalTour(population, probability, iterations)
+      }
+
+      /**
+        *
+        * @return
+        */
+      def branchBoundTSP:Seq[Edge[T]] =
+      {
+        var starting = Seq[T]()
+        var remaining = Set[T]()
+        val minCost = Long.MaxValue
+        val startingMin = getVertices.toSeq :+ getVertices.toSeq.head
+
+        // Sets the starting tour to be the first vertex in the getVertices iterable.
+        starting = starting :+ getVertices.head
+
+        // Sets the remaining vertices as the set of all vertices without the starting vertex.
+        remaining = getVertices.toSet - starting.head
+
+        val stuff = backtrack(starting, minCost, startingMin, remaining)
+        println(pathLength(stuff))
+        convertToEdges(stuff)
+      }
+
+      /**
+        *
+        * @param A
+        * @param cost
+        * @return
+        */
+      private def backtrack(A:Seq[T], cost:Long, currentMin:Seq[T], remainingVerts:Set[T]):Seq[T] =
+      {
+        var minCost = cost
+        var minPath = currentMin
+        var testPath = Seq[T]()
+        var newPath = Seq[T]()
+        var element = A.head
+        var newVerts = remainingVerts
+        var length = 0.toLong
+
+        // If Seq A is a complete circuit, compare the path length of A to the minimum path length.
+        if(A.size == getVertices.size + 1)
+          {
+            // Length was declared to minimize use of pathLength method
+            length = pathLength(A).get
+            if(length < minCost)
+              {
+                minCost = length
+                minPath = A
+              }
+          }
+
+        // If Seq A is not a complete circuit, continue adding vertices to make it a complete circuit.
+        else
+          {
+            // If Seq A contains all variables, add the starting value to the beginning to make a complete circuit.
+            if(remainingVerts.isEmpty)
+              {
+                // A.last was chosen to be prepended rather than appended to save run time (O(1) vs O(n)).
+                testPath = A.last +: A
+
+                newPath = backtrack(testPath, minCost, minPath, remainingVerts)
+                length = pathLength(newPath).get
+
+                /*
+                 If the path length of the updated path is less than the current minimum cost, set the updated path as
+                 the new minimum.
+                 */
+                if(length < minCost)
+                  {
+                    minCost = length
+                    minPath = newPath
+                  }
+              }
+
+            // If Seq A does not contain all variable, continue adding variables until a complete circuit is obtained.
+            else
+            {
+              // Considers all vertices not yet in A.
+              for(v <- 0 until remainingVerts.size)
+                {
+                  // Element was declared to limit calling of .toSeq to save runtime.
+                  element = remainingVerts.toSeq(v)
+
+                  // Elements are prepended rather than appended to save runtime (O(1) vs O(n))
+                  testPath = element +: A
+
+                  // newVerts is the remaining vertices after the addition of element
+                  newVerts = remainingVerts - element
+
+                  // Checks to see if the path length of the test path can improve on the min cost.
+                  if(pathLength(testPath).get < minCost)
+                    {
+                      newPath = backtrack(testPath, minCost, minPath, newVerts)
+                      length = pathLength(newPath).get
+
+                      /*
+                       If the path length of the test path is lower than the current min cost, set the new path as
+                       the minimum path
+                       */
+                      if(length < minCost)
+                      {
+                        minCost = length
+                        minPath = newPath
+                      }
+                    }
+                }
+            }
+          }
+
+        minPath
+      }
+
+      /**
+        * Returns a string representation of the graph
+        *
+        * @return A string representation of the graph
+        */
+      override def toString:String =
+      {
+        if (map.keySet.isEmpty)
+        {
+          "Empty graph."
+        }
+        else
+        {
+          "Vertices:\n" + map.keySet.toString() + "\n\n" + "Edges:\n" + map.toString()
+        }
+      }
+
+      private def convertToEdges(verts:Seq[T]):Seq[Edge[T]] =
+      {
+        var finalEdges = Seq[Edge[T]]()
+
+        for(index <- 0 until verts.size - 1)
+        {
+          finalEdges = finalEdges :+ getEdge(verts(index), verts(index + 1)).get
+        }
+
+        finalEdges
+      }
+    }
+
+    /*
+		Loads a graph from a TSP file
+		*/
+    def fromTSPFile(fileName:String):Graph[Int] =
+    {
+      //create an empty graph
+      val emptyGraph = Graph[Int](false)
+
+      //load the XML file
+      val tspXML = loadFile(fileName)
+
+      //get all the vertices
+      val vertices = tspXML \\ "vertex"
+
+      //add in all the vertices
+      val graph = Range(0, vertices.size).foldLeft(emptyGraph)((g,v) => g.addVertex(v))
+
+      //add in all the edges - they are part of each xml vertex
+      vertices.zipWithIndex.foldLeft(graph)((g,t) => addXMLEdges(g, t._1, t._2))
+    }
+
+    /*
+		Add in edges assume the vertices exist
+		*/
+    private def addXMLEdges(graph:Graph[Int], xmlEdges:Node, start:Int):Graph[Int] =
+    {
+      //parse all the edges - tuples of (destination, weight)
+      val edges = (xmlEdges \ "edge").map(e => (e.text.toInt, e.attributes("cost").text.toDouble.toInt))
+
+      //remove the edges that already exist
+      val newEdges = edges.filterNot(e => graph.edgeExists(start, e._1))
+
+      //add in new edges
+      newEdges.foldLeft(graph)((g,e) => g.addEdge(start, e._1, e._2))
+    }
+  }
+
+  def main(args: Array[String]): Unit = {
+    val graph = Graph.fromTSPFile("ulysses16.xml")
+    var t1 = System.nanoTime()
+
+    graph.getLocalTSP()
+    println("TSP1, Greedy TSP - Time: " + ((System.nanoTime() - t1)/1e9d))
+    println()
+
+    t1 = System.nanoTime()
+    graph.dynamicTSP
+    println("TSP2, Dynamic TSP - Time: " + ((System.nanoTime() - t1)/1e9d))
+    println()
+
+    t1 = System.nanoTime()
+    graph.getOptimalTour
+    println("TSP3, Genetic (Randomized) TSP - Time: " + ((System.nanoTime() - t1)/1e9d))
+    println()
+
+    t1 = System.nanoTime()
+    graph.branchBoundTSP
+    println("TSP4, Branch/Bound TSP - Time: " + ((System.nanoTime() - t1)/1e9d))
+  }
+}
