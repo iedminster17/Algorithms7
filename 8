@@ -1,0 +1,261 @@
+import java.util
+
+/**
+  * Object for sorting arrays of integers. Can sort by quickSort and Insertion sort. quickSort implementation has been
+  * given in both recursive and iterative forms.
+  */
+object quicksort
+{
+  /**
+    * Sorts by choosing a partition point, splitting the array into two subarray on either side of the partition point,
+    * then recursively sorting those subarrays.
+    *
+    * @param values The Int array to be sorted
+    */
+  def quickSortRecursive(values: Array[Int])
+  {
+    // Call quickSortRecursive with left and right values of the respective indices of the array
+    quickSortRecursive(values, 0, values.length - 1)
+  }
+
+  /**
+    * Private helper method for quickSortRecursive. The actual method that is recursive. Sorts by choosing a partition
+    * point, splitting the array into two subarray on either side of the partition point, then recursively sorting
+    * those subarrays.
+    *
+    * @param values The Int array to be sorted
+    * @param left The left index of the subarray
+    * @param right The right index of the subarray
+    */
+  private def quickSortRecursive(values: Array[Int], left: Int, right: Int)
+  {
+    // If the subarray length is less than 11, sort by insertion sort
+    if (right - left <= 10)
+    {
+      insertionSort(values, left, right)
+    }
+
+    // Partition the array into two subarrays, then recursively call this method on the two subarrays
+    else
+    {
+      val i = partition(values, left, right)
+
+      quickSortRecursive(values, 0, i-1)
+      quickSortRecursive(values, i + 1, right)
+    }
+  }
+
+  /**
+    * Non-recursive method of quickSort. Sorts by partitioning the elements into subarrays, then pushing the outer
+    * indices onto a stack and quickSorting that subarray.
+    *
+    * @param values The Int array to be sorted
+    */
+  def quickSort(values: Array[Int])
+  {
+    var left = 0
+    var right = values.length - 1
+    val stack = new util.Stack[Int]()
+
+    // Push the original indices of the array onto the stack
+    stack.push(left)
+    stack.push(right)
+
+    while(!stack.isEmpty)
+      {
+        // Get the indices of the subarray to be partitioned
+        right = stack.pop()
+        left = stack.pop()
+
+        // Partition the array and get the pivot point
+        val pivot = partition(values, left, right)
+
+        // If there are elements to the left of the pivot, push the outer indices of the subarray onto the stack
+        if(pivot - 1 > left)
+          {
+            stack.push(left)
+            stack.push(pivot - 1)
+          }
+
+        // If there are elements to the right of the pivot, push the outer indices of the subarray onto the stack
+        if(pivot + 1 < right)
+          {
+            stack.push(pivot + 1)
+            stack.push(right)
+          }
+      }
+  }
+
+  /**
+    * Method of sorting accomplished by sorting the first n numbers of the array until fully sorted.
+    *
+    * @param values The Int array to be sorted
+    */
+  def insertionSort(values: Array[Int])
+  {
+    // Only arrays of length 1 or more can be sorted
+    if (values.length > 0)
+    {
+      insertionSort(values, 0, values.length - 1)
+    }
+  }
+
+  /**
+    * A private helper method that accomplishes the sorting. Required because of the extra parameters for sorting small
+    * subarrays in quickSort.
+    *
+    * @param values The Int array to be sorted
+    * @param left The left index of the subarray
+    * @param right The right index of the subarray
+    */
+  private def insertionSort(values: Array[Int], left: Int, right: Int)
+  {
+    for (i <- left + 1 to right)
+    {
+      var j = i
+      while(j > 0 && values(j - 1) > values(j))
+        {
+          swap(values, j, j - 1)
+          j -= 1
+        }
+    }
+  }
+
+  /**
+    * A private helper method that accomplishes the partitioning of the array for quickSort. Returns the index the pivot
+    * point is at.
+    *
+    * @param values The Int array to be partitioned
+    * @param left The left index of the subarray
+    * @param right The right index of the subarray
+    *
+    * @return Returns the current index of the pivot point
+    */
+  private def partition(values:Array[Int], left:Int, right:Int):Int =
+  {
+    val pivot = right
+    var i = left
+    for(j <- left to right)
+      {
+        if(values(j) < values(pivot))
+          {
+            swap(values, j, pivot)
+            i += 1
+          }
+      }
+    swap(values, i, pivot)
+
+    i
+    /*
+    // Choose the pivot
+    val pivot = pickPivot(values, left, right)
+
+    var i = left
+    var j = right - 1
+    var keepGoing = true
+
+    // If the pivot is not the rightmost element, swap the pivot and the right element
+    if (values(right) != pivot)
+    {
+      swap(values, values.indexOf(pivot), right)
+    }
+
+    // While i < j
+    while (keepGoing || i < j)
+    {
+      // Continue adding until i reaches a values >= pivot
+      while (i < right && values(i) < pivot)
+      {
+        i += 1
+      }
+
+      // Continue subtracting until j reaches a values <= pivot
+      while (j > 0 && values(j) > pivot)
+      {
+        j -= 1
+      }
+
+      // Swap values and increment both i and j
+      if (i < j)
+      {
+        swap(values, i, j)
+        i += 1
+        j -= 1
+      }
+      else
+      {
+        keepGoing = false
+      }
+    }
+
+    // Put the pivot at the correct index
+    swap(values, i, right)
+
+    i*/
+  }
+
+  /**
+    * Chooses a pivot for partitioning. Accomplished by the median-of-three theory where the first, last, and middle
+    * element are chosen and compared. The median of the three elements is chosen to be the pivot.
+    *
+    * @param values The array in which the pivot will be calculated
+    * @param left The left index of the subarray
+    * @param right The right index of the subarray
+    *
+    * @return Returns the pivot point chosen to be used for the partitioning
+    */
+  private def pickPivot(values: Array[Int], left: Int, right: Int): Int =
+  {
+    val l = values(left)
+    val r = values(right)
+    val m = values(right / 2)
+
+    // Add the three points into an array and sort
+    val pivots = Array(l, r, m)
+
+    insertionSort(pivots)
+
+    // Take the median point
+    pivots(1)
+  }
+
+  /**
+    * Swaps two values of an array.
+    *
+    * @param values The array containing the to-be-swapped values
+    * @param location The index of the first value that needs swapped
+    * @param location2 The index of the second value that needs swapped
+    */
+  private def swap(values: Array[Int], location: Int, location2: Int)
+  {
+    val placeholder = values(location)
+    values.update(location, values(location2))
+    values.update(location2, placeholder)
+  }
+
+  def main(args: Array[String]): Unit = {
+    val Random = new util.Random()
+    val seq = Seq.fill(500)(Random.nextInt)
+    val array = seq.toArray
+
+    var t1 = System.nanoTime()
+    //quicksort.quickSort(array)
+    var duration = (System.nanoTime - t1) / 1e9d
+    println("Quicksort - " + duration)
+
+    t1 = System.nanoTime()
+    quicksort.quickSortRecursive(array)
+    duration = (System.nanoTime - t1) / 1e9d
+    println("Quicksort, Recursive - " + duration)
+
+    t1 = System.nanoTime()
+    quicksort.insertionSort(array)
+    duration = (System.nanoTime - t1) / 1e9d
+    println("Insertion sort - " + duration)
+
+    t1 = System.nanoTime()
+    array.sortWith(_ < _)
+    duration = (System.nanoTime - t1) / 1e9d
+    println("Java sort - " + duration)
+  }
+}
